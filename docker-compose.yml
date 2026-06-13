@@ -1,0 +1,77 @@
+# ============================================================
+# Brew & Bean — Docker Compose
+# ============================================================
+# Includes a bundled PostgreSQL database. Payment screenshot
+# uploads and database data are stored in named volumes so
+# they persist across container restarts and rebuilds.
+#
+# Quick start:
+#   cp .env.example .env    # then edit .env
+#   docker compose up -d
+#   # First run auto-applies migration.sql to the DB
+#
+# Update after code change:
+#   docker compose build && docker compose up -d
+#
+# View logs:
+#   docker compose logs -f app
+#
+# Connect to DB:
+#   docker compose exec postgres psql -U brewbean -d brew_bean
+#
+# Backup uploads:
+#   docker cp $(docker compose ps -q app):/app/uploads ./uploads-backup
+#
+# Backup database:
+#   docker compose exec postgres pg_dump -U brewbean brew_bean > backup.sql
+# ============================================================
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        VITE_ADMIN_PHONE: ${VITE_ADMIN_PHONE}
+        VITE_ADMIN_PIN: ${VITE_ADMIN_PIN}
+        VITE_UPI_ID: ${VITE_UPI_ID}
+        VITE_UPI_NAME: ${VITE_UPI_NAME}
+        VITE_API_URL: ${VITE_API_URL:-}
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://brewbean:${POSTGRES_PASSWORD:-changeme}@postgres:5432/brew_bean
+      PORT: 8080
+      FRONTEND_DIST: /app/public
+      NODE_ENV: production
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: brewbean
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: brew_bean
+    volumes:
+      # Persistent data
+      - postgres_data:/var/lib/postgresql/data
+      # Auto-run migration on first start (only when data dir is empty)
+      - ./migration.sql:/docker-entrypoint-initdb.d/01_migration.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brewbean -d brew_bean"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    # Remove or comment the ports block to keep Postgres private (recommended)
+    # ports:
+    #   - "5432:5432"
+
+volumes:
+  postgres_data:
+  uploads:
